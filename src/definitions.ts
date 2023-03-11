@@ -1,3 +1,7 @@
+import { PluginListenerHandle } from '@capacitor/core';
+
 export interface AudioTogglePlugin {
-  echo(options: { value: string }): Promise<{ value: string }>;
+  setAudioMode(options: { mode: string }): Promise< { mode: string }>;
+  bluetoothConnected(): Promise< { isBluetooth: boolean }>;
+  addListener(eventName: 'bluetoothConnected', listenerFunc: (bluetoothConnected: boolean) => void): Promise<PluginListenerHandle> & PluginListenerHandle;
 }

@@ -1,11 +1,18 @@
 package com.verve.audiotoggle.killeh;
 
-import android.util.Log;
+import android.content.Context;
 
 public class AudioToggle {
+    private final Context context;
 
-    public String echo(String value) {
-        Log.i("Echo", value);
+    public AudioToggle(Context context) {
+        this.context = context;
+    }
+
+    public Context getContext() {
+        return this.context;
+    }
+    public String setAudioMode(String value) {
         return value;
     }
 }
