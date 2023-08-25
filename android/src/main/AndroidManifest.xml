@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.verve.audiotoggle.killeh">
+    >
 
       <uses-feature android:name="android.hardware.microphone" />
 
