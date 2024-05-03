@@ -51,11 +51,11 @@ public class AudioTogglePlugin extends Plugin {
     private boolean mIsScoConnected;
     private String audioMode;
 
-
     @Override
     public void load() {
         audioBridge = bridge;
         IntentFilter filter = new IntentFilter();
+        mAudioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         filter.addCategory(
                 BluetoothHeadset.VENDOR_SPECIFIC_HEADSET_EVENT_COMPANY_ID_CATEGORY
                         + "."
@@ -68,14 +68,19 @@ public class AudioTogglePlugin extends Plugin {
     }
 
     private void refreshCallView() {
+        if (audioMode == null) {
+            audioMode = "unknown"; // Set a default value if audioMode is null
+        }
         JSObject actionJson = new JSObject();
         actionJson.put("audioMode", audioMode);
 
         actionJson.put("bluetoothConnected", mIsBluetoothConnected);
         actionJson.put("audioMode", audioMode);
         actionJson.put("deviceConnected", getInitialDeviceConnected());
-        notifyListeners("bluetoothConnected", actionJson, true);
-        audioBridge.triggerJSEvent("bluetoothConnected", "document");
+        if (audioBridge != null) {
+            notifyListeners("bluetoothConnected", actionJson, true);
+            audioBridge.triggerJSEvent("bluetoothConnected", "document");
+        }
         android.util.Log.d("BluetoothManager", "[Bluetooth] mIsBluetoothConnected: " + mIsBluetoothConnected + " mIsScoConnected " + mIsScoConnected + " mBluetoothAdapter " + getInitialDeviceConnected());
 
     }
@@ -84,7 +89,10 @@ public class AudioTogglePlugin extends Plugin {
             ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT);// TODO: Consider calling
         }
         BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        return mBluetoothAdapter.isEnabled() && mBluetoothAdapter.getProfileConnectionState(BluetoothHeadset.HEADSET) == BluetoothHeadset.STATE_CONNECTED;
+        if (mBluetoothAdapter != null) {
+            return mBluetoothAdapter.isEnabled() && mBluetoothAdapter.getProfileConnectionState(BluetoothHeadset.HEADSET) == BluetoothAdapter.STATE_CONNECTED;
+        }
+        return false;
     }
     private void startBluetooth() {
         if (mIsBluetoothConnected) {
@@ -151,7 +159,6 @@ public class AudioTogglePlugin extends Plugin {
                 } catch (InterruptedException e) {
 //                    Log.e(e);
                 }
-
                 mAudioManager.stopBluetoothSco();
                 mAudioManager.setBluetoothScoOn(false);
             }
@@ -168,7 +175,7 @@ public class AudioTogglePlugin extends Plugin {
             mBluetoothAdapter.closeProfileProxy(BluetoothProfile.HEADSET, mBluetoothHeadset);
             mProfileListener = null;
         }
-        BluetoothDevice mBluetoothDevice = null;
+//        BluetoothDevice mBluetoothDevice = null;
 
         android.util.Log.w("BluetoothManager", "[Bluetooth] Stopped!");
     }
@@ -257,12 +264,11 @@ public class AudioTogglePlugin extends Plugin {
 
     private void bluetoothMode() {
         if (getInitialDeviceConnected()) {
-            AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
             startBluetooth();
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.startBluetoothSco();
-            audioManager.setBluetoothScoOn(true);
-            audioManager.setSpeakerphoneOn(false);
+            mAudioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            mAudioManager.startBluetoothSco();
+            mAudioManager.setBluetoothScoOn(true);
+            mAudioManager.setSpeakerphoneOn(false);
 //        Toast.makeText(getContext(), "Bluetooth Connected", Toast.LENGTH_SHORT).show();
             audioMode = "bluetooth";
         }
@@ -270,9 +276,9 @@ public class AudioTogglePlugin extends Plugin {
     @PluginMethod
     public void bluetoothConnected(PluginCall call) {
         JSObject actionJson = new JSObject();
-        AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-        actionJson.put("isConnected", audioManager.isBluetoothScoOn());
-        if (audioManager.isBluetoothScoOn()) {
+        mAudioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        actionJson.put("isConnected", mAudioManager.isBluetoothScoOn());
+        if (mAudioManager.isBluetoothScoOn()) {
             mIsBluetoothConnected = true;
             bluetoothMode();
         }
@@ -283,20 +289,24 @@ public class AudioTogglePlugin extends Plugin {
     public void setAudioMode(PluginCall call) {
         String mode = call.getString("mode");
         Context context = getContext();
-        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).build();
+            AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).build();
+            int result = mAudioManager.requestAudioFocus(focusRequest);
+            if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                // Handle audio focus request failure here
+                Log.d(TAG, "Audio Request Error");
+            }
         } else {
-            audioManager.requestAudioFocus(null, AudioAttributes.USAGE_VOICE_COMMUNICATION,AudioManager.AUDIOFOCUS_GAIN);
+            mAudioManager.requestAudioFocus(null, AudioAttributes.USAGE_VOICE_COMMUNICATION,AudioManager.AUDIOFOCUS_GAIN);
         }
         AudioDeviceInfo speakerDevice = null;
-        audioManager.setSpeakerphoneOn(false);
+        mAudioManager.setSpeakerphoneOn(false);
         AudioDeviceInfo[] d = new AudioDeviceInfo[0];
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            d = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            d = mAudioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
             for (AudioDeviceInfo device : d) {
                 if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                    if(audioManager.isBluetoothScoOn()) {
+                    if(mAudioManager.isBluetoothScoOn()) {
 //                        Toast.makeText(context, "Bluetooth Connected", Toast.LENGTH_SHORT).show();
                     }
                 }
@@ -307,61 +317,62 @@ public class AudioTogglePlugin extends Plugin {
             bluetoothMode();
         }
         if ("earpiece".equals(mode)) {
-            audioManager.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_PLAY_SOUND);
+            mAudioManager.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_PLAY_SOUND);
             audioMode = "earpiece";
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                audioManager.setMode(AudioManager.MODE_NORMAL);
-                audioManager.clearCommunicationDevice();
-                List<AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
+                mAudioManager.setMode(AudioManager.MODE_NORMAL);
+                mAudioManager.clearCommunicationDevice();
+                List<AudioDeviceInfo> devices = mAudioManager.getAvailableCommunicationDevices();
                 for (AudioDeviceInfo device : devices) {
                     if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
                         speakerDevice = device;
                         break;
                     }
                 }
-                boolean result = audioManager.setCommunicationDevice(speakerDevice);
+                // Your existing code to set communication device
+                boolean result = mAudioManager.setCommunicationDevice(speakerDevice);
             } else {
-                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setSpeakerphoneOn(false);
+                mAudioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                mAudioManager.setSpeakerphoneOn(false);
             }
 
         } else if ("speaker".equals(mode)) {
             audioMode = "speaker";
-            if (audioManager.isBluetoothScoOn()) {
+            if (mAudioManager.isBluetoothScoOn()) {
                 Log.d(TAG, "I'm in!!!" + mode);
                 stopBluetooth();
-                audioManager.setMode(AudioManager.MODE_NORMAL);
-                audioManager.stopBluetoothSco();
-                audioManager.setBluetoothScoOn(false);
-                audioManager.setSpeakerphoneOn(true);
+                mAudioManager.setMode(AudioManager.MODE_NORMAL);
+                mAudioManager.stopBluetoothSco();
+                mAudioManager.setBluetoothScoOn(false);
+                mAudioManager.setSpeakerphoneOn(true);
             }
-            audioManager.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_PLAY_SOUND);
+            mAudioManager.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_PLAY_SOUND);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                List<AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
+                List<AudioDeviceInfo> devices = mAudioManager.getAvailableCommunicationDevices();
                 for (AudioDeviceInfo device : devices) {
                     if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
                         speakerDevice = device;
                         break;
                     }
                 }
-                boolean result = audioManager.setCommunicationDevice(speakerDevice);
+                boolean result = mAudioManager.setCommunicationDevice(speakerDevice);
             } else {
-                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setSpeakerphoneOn(true);
+                mAudioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                mAudioManager.setSpeakerphoneOn(true);
             }
             Toast.makeText(context, "Speaker on", Toast.LENGTH_SHORT).show();
 
         } else if ("ringtone".equals(mode)) {
             Log.d(TAG, "I'm in!!!" + mode);
-            audioManager.setMode(AudioManager.MODE_RINGTONE);
-            audioManager.setSpeakerphoneOn(false);
+            mAudioManager.setMode(AudioManager.MODE_RINGTONE);
+            mAudioManager.setSpeakerphoneOn(false);
 //            Toast.makeText(context, mode + " " + audioManager.isSpeakerphoneOn(), Toast.LENGTH_SHORT).show();
 
         } else if ("normal".equals(mode)) {
             Log.d(TAG, "I'm in!!!" + mode);
-            audioManager.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_PLAY_SOUND);
-            audioManager.setMode(AudioManager.MODE_NORMAL);
-            audioManager.setSpeakerphoneOn(false);
+            mAudioManager.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_PLAY_SOUND);
+            mAudioManager.setMode(AudioManager.MODE_NORMAL);
+            mAudioManager.setSpeakerphoneOn(false);
 //            Toast.makeText(context, mode + " " + audioManager.isSpeakerphoneOn(), Toast.LENGTH_SHORT).show();
         }
     }
