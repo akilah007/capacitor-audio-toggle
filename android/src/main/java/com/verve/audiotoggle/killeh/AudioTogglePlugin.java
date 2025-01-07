@@ -86,11 +86,16 @@ public class AudioTogglePlugin extends Plugin {
     }
     private boolean getInitialDeviceConnected() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT);// TODO: Consider calling
+            if (ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
         }
         BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (mBluetoothAdapter != null) {
-            return mBluetoothAdapter.isEnabled() && mBluetoothAdapter.getProfileConnectionState(BluetoothHeadset.HEADSET) == BluetoothAdapter.STATE_CONNECTED;
+            if (mBluetoothAdapter != null && mBluetoothAdapter.isEnabled()) {
+                return mBluetoothAdapter.getProfileConnectionState(BluetoothHeadset.HEADSET) == BluetoothAdapter.STATE_CONNECTED;
+            }
+            return false;
         }
         return false;
     }
